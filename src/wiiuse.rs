@@ -1,6 +1,5 @@
-use std::{default, ffi::CStr};
-
-use crate::{error::Error, get_version};
+use bitflags::bitflags;
+use std::ffi::CStr;
 
 pub type WiimotePtrArr = *mut *mut wiiuse_sys::wiimote_t;
 pub type WiimotePtr = *mut wiiuse_sys::wiimote_t;
@@ -196,6 +195,31 @@ impl<'a> Wiimote<'a> {
 
     pub fn get_battery_level(&self) -> f32 {
         unsafe { (*self.ptr).battery_level }
+    }
+}
+
+bitflags! {
+    pub struct WiimoteButton: u16 {
+        const LEFT      = 0x0001;
+        const RIGHT     = 0x0002;
+        const DOWN      = 0x0004;
+        const UP        = 0x0008;
+        const PLUS      = 0x0010;
+        const TWO       = 0x0100;
+        const ONE       = 0x0200;
+        const B         = 0x0400;
+        const A         = 0x0800;
+        const MINUS     = 0x1000;
+        const HOME      = 0x8000;
+    }
+}
+
+impl<'a> Wiimote<'a> {
+    pub fn is_button_pressed(&self, buttons: WiimoteButton) -> bool {
+        unsafe {
+            let current_btns = (*self.ptr).btns;
+            (current_btns & buttons.bits()) != 0
+        }
     }
 }
 
