@@ -1,3 +1,5 @@
+use std::default;
+
 use crate::error::Error;
 
 pub type WiimotePtrArr = *mut *mut wiiuse_sys::wiimote_t;
@@ -121,6 +123,40 @@ impl Drop for Wiiuse {
     }
 }
 
+#[derive(Default, Clone, Copy)]
+pub struct WiimoteLeds(pub bool, pub bool, pub bool, pub bool);
+
+impl WiimoteLeds {
+    pub fn new() -> Self {
+        WiimoteLeds::default()
+    }
+
+    pub fn on_1(mut self) -> Self {
+        self.0 = true;
+        self
+    }
+    pub fn on_2(mut self) -> Self {
+        self.1 = true;
+        self
+    }
+    pub fn on_3(mut self) -> Self {
+        self.2 = true;
+        self
+    }
+    pub fn on_4(mut self) -> Self {
+        self.3 = true;
+        self
+    }
+
+    pub fn bitmask(&self) -> i32 {
+        let l1 = if self.0 { 0x10 } else { 0 };
+        let l2 = if self.1 { 0x20 } else { 0 };
+        let l3 = if self.2 { 0x30 } else { 0 };
+        let l4 = if self.3 { 0x40 } else { 0 };
+        l1 | l2 | l3 | l4
+    }
+}
+
 pub struct Wiimote<'a> {
     ptr: *mut wiiuse_sys::wiimote_t,
     context: &'a Wiiuse,
@@ -130,6 +166,18 @@ impl<'a> Wiimote<'a> {
     pub fn rumble(&self, status: bool) {
         unsafe {
             wiiuse_sys::wiiuse_rumble(self.ptr, if status { 1 } else { 0 });
+        }
+    }
+
+    pub fn toggle_rumble(&self) {
+        unsafe {
+            wiiuse_sys::wiiuse_toggle_rumble(self.ptr);
+        }
+    }
+
+    pub fn set_leds(&self, config: WiimoteLeds) {
+        unsafe {
+            wiiuse_sys::wiiuse_set_leds(self.ptr, config.bitmask());
         }
     }
 
