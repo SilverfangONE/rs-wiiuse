@@ -71,12 +71,12 @@ impl Wiiuse {
         let found = unsafe {
             wiiuse_sys::wiiuse_find(self.wm_arr_ptr, self.max_wiimotes, timeout_sec as i32)
         };
-        return if found < 0 { 0 } else { found as u32 };
+        if found < 0 { 0 } else { found as u32 }
     }
 
     pub fn connect(&self) -> u32 {
         let connected = unsafe { wiiuse_sys::wiiuse_connect(self.wm_arr_ptr, self.max_wiimotes) };
-        return if connected < 0 { 0 } else { connected as u32 };
+        if connected < 0 { 0 } else { connected as u32 }
     }
 
     pub fn disconnect_by_id(&self, id: WiimoteId) -> Result<(), String> {
@@ -103,7 +103,7 @@ impl Wiiuse {
         }
         let count = self.connect();
         if count > 0 {
-            Ok(count as u32)
+            Ok(count)
         } else {
             Err(format!("connection error (found {})", found))
         }
