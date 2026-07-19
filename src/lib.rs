@@ -1,5 +1,5 @@
 use bitflags::bitflags;
-use std::ffi::CStr;
+use std::{ffi::CStr, marker::PhantomData};
 
 pub type WiimotePtrArr = *mut *mut wiiuse_sys::wiimote_t;
 pub type WiimotePtr = *mut wiiuse_sys::wiimote_t;
@@ -56,7 +56,10 @@ impl Wiiuse {
             if ptr.is_null() {
                 return None;
             }
-            Some(Wiimote { ptr, context: self })
+            Some(Wiimote {
+                ptr,
+                _marker: PhantomData,
+            })
         } else {
             None
         }
@@ -171,7 +174,7 @@ impl WiimoteLeds {
 
 pub struct Wiimote<'a> {
     ptr: *mut wiiuse_sys::wiimote_t,
-    context: &'a Wiiuse,
+    _marker: PhantomData<&'a Wiiuse>,
 }
 
 impl<'a> Wiimote<'a> {
