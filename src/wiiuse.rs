@@ -1,18 +1,27 @@
+use crate::error::Error;
+
 pub type WiimotePtrArr = *mut *mut wiiuse_sys::wiimote_t;
 pub type WiimotePtr = *mut wiiuse_sys::wiimote_t;
-pub type WiimoteId = usize;
 
-pub struct WiiuseContext {
+pub const DEFAULT_EXPANSION_TIMEOUT: u8 = 100;
+pub const DEFAULT_POLL_TIMEOUT: u8 = 100;
+
+pub struct WiimoteId(usize);
+
+impl std::ops::Deref for WiimoteId {
+    type Target = usize;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+pub struct Wiiuse {
     wm_arr_ptr: *mut *mut wiiuse_sys::wiimote_t,
     max_wiimotes: i32,
 }
 
-pub struct Wiimote<'a> {
-    ptr: *mut wiiuse_sys::wiimote_t,
-    context: &'a WiiuseContext,
-}
-
-impl WiiuseContext {
+impl Wiiuse {
     pub fn init(max_wiimotes: u32) -> Self {
         let max_wiimotes = max_wiimotes as i32;
         let wm_arr_ptr = unsafe { wiiuse_sys::wiiuse_init(max_wiimotes) };
@@ -22,9 +31,11 @@ impl WiiuseContext {
         }
     }
 
-    pub fn get_wiimote(&self, index: usize) -> Option<Wiimote<'_>> {
+    pub fn get_wiimote_by_id(&self, id: WiimoteId) -> Option<Wiimote<'_>> {
         let slice =
             unsafe { std::slice::from_raw_parts(self.wm_arr_ptr, self.max_wiimotes as usize) };
+
+        let index: usize = *id;
 
         if index < slice.len() {
             let ptr = slice[index];
@@ -49,6 +60,23 @@ impl WiiuseContext {
         return if connected < 0 { 0 } else { connected as u32 };
     }
 
+    pub fn disconnect_by_id(&self, id: WiimoteId) -> Result<(), String> {
+        if let Some(wiimote) = self.get_wiimote_by_id(id) {
+            unsafe {
+                wiiuse_sys::wiiuse_disconnect(wiimote.ptr);
+            }
+            Ok(())
+        } else {
+            Err("wiimot with id {} not found".to_string())
+        }
+    }
+
+    pub fn disconnect_raw(&self, wm_ptr: WiimotePtr) {
+        unsafe {
+            wiiuse_sys::wiiuse_disconnect(wm_ptr);
+        }
+    }
+
     pub fn connect_all(&self, timeout_sec: u32) -> Result<u32, String> {
         let found = self.find(timeout_sec);
         if found <= 0 {
@@ -62,7 +90,40 @@ impl WiiuseContext {
         }
     }
 
-    pub fn poll()
+    ///  return the number of wiimotes that had an event occur
+    pub fn poll(&self) -> u32 {
+        let wiimotes = unsafe { wiiuse_sys::wiiuse_poll(self.wm_arr_ptr, self.max_wiimotes) };
+        wiimotes as u32
+    }
+
+    /// ## Arguments
+    ///
+    /// * `normal_timeout_ms` - used for normal polling.
+    /// * `exp_timeout_ms` - used when an expansion is detected until the expansion succesfully handshakes.
+    ///
+    pub fn set_timeout(&self, normal_timeout_ms: u8, exp_timeout_ms: u8) {
+        unsafe {
+            wiiuse_sys::wiiuse_set_timeout(
+                self.wm_arr_ptr,
+                self.max_wiimotes,
+                normal_timeout_ms,
+                exp_timeout_ms,
+            );
+        }
+    }
+}
+
+impl Drop for Wiiuse {
+    fn drop(&mut self) {
+        unsafe {
+            wiiuse_sys::wiiuse_cleanup(self.wm_arr_ptr, self.max_wiimotes);
+        }
+    }
+}
+
+pub struct Wiimote<'a> {
+    ptr: *mut wiiuse_sys::wiimote_t,
+    context: &'a Wiiuse,
 }
 
 impl<'a> Wiimote<'a> {
