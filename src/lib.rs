@@ -2,6 +2,7 @@ use bitflags::bitflags;
 use std::{ffi::CStr, marker::PhantomData};
 use wiiuse_sys::WiimoteExt;
 
+pub type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
 pub type WiimotePtrArr = *mut *mut wiiuse_sys::wiimote_t;
 pub type WiimotePtr = *mut wiiuse_sys::wiimote_t;
 
@@ -202,6 +203,48 @@ impl<'a> Wiimote<'a> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum WiimoteEvent {
+    None = wiiuse_sys::WIIUSE_EVENT_TYPE_WIIUSE_NONE,
+    Event = wiiuse_sys::WIIUSE_EVENT_TYPE_WIIUSE_EVENT,
+    Status = wiiuse_sys::WIIUSE_EVENT_TYPE_WIIUSE_STATUS,
+    Connect = wiiuse_sys::WIIUSE_EVENT_TYPE_WIIUSE_CONNECT,
+    Disconnect = wiiuse_sys::WIIUSE_EVENT_TYPE_WIIUSE_DISCONNECT,
+    UnexpectedDisconnect = wiiuse_sys::WIIUSE_EVENT_TYPE_WIIUSE_UNEXPECTED_DISCONNECT,
+    ReadData = wiiuse_sys::WIIUSE_EVENT_TYPE_WIIUSE_READ_DATA,
+    NunchukInserted = wiiuse_sys::WIIUSE_EVENT_TYPE_WIIUSE_NUNCHUK_INSERTED,
+    NunchukRemoved = wiiuse_sys::WIIUSE_EVENT_TYPE_WIIUSE_NUNCHUK_REMOVED,
+    ClassicInserted = wiiuse_sys::WIIUSE_EVENT_TYPE_WIIUSE_CLASSIC_CTRL_INSERTED,
+    ClassicRemoved = wiiuse_sys::WIIUSE_EVENT_TYPE_WIIUSE_CLASSIC_CTRL_REMOVED,
+}
+
+impl WiimoteEvent {
+    fn from_raw(value: u32) -> Option<Self> {
+        let res = match value {
+            wiiuse_sys::WIIUSE_EVENT_TYPE_WIIUSE_NONE => WiimoteEvent::None,
+            wiiuse_sys::WIIUSE_EVENT_TYPE_WIIUSE_EVENT => WiimoteEvent::Event,
+            wiiuse_sys::WIIUSE_EVENT_TYPE_WIIUSE_STATUS => WiimoteEvent::Status,
+            wiiuse_sys::WIIUSE_EVENT_TYPE_WIIUSE_CONNECT => WiimoteEvent::Connect,
+            wiiuse_sys::WIIUSE_EVENT_TYPE_WIIUSE_DISCONNECT => WiimoteEvent::Disconnect,
+            wiiuse_sys::WIIUSE_EVENT_TYPE_WIIUSE_UNEXPECTED_DISCONNECT => {
+                WiimoteEvent::UnexpectedDisconnect
+            }
+            wiiuse_sys::WIIUSE_EVENT_TYPE_WIIUSE_READ_DATA => WiimoteEvent::ReadData,
+            wiiuse_sys::WIIUSE_EVENT_TYPE_WIIUSE_NUNCHUK_INSERTED => WiimoteEvent::NunchukInserted,
+            wiiuse_sys::WIIUSE_EVENT_TYPE_WIIUSE_NUNCHUK_REMOVED => WiimoteEvent::NunchukRemoved,
+            wiiuse_sys::WIIUSE_EVENT_TYPE_WIIUSE_CLASSIC_CTRL_INSERTED => {
+                WiimoteEvent::ClassicInserted
+            }
+            wiiuse_sys::WIIUSE_EVENT_TYPE_WIIUSE_CLASSIC_CTRL_REMOVED => {
+                WiimoteEvent::ClassicRemoved
+            }
+            _ => return None,
+        };
+        Some(res)
+    }
+}
+
 bitflags! {
     pub struct WiimoteButton: u16 {
         const LEFT      = wiiuse_sys::WIIMOTE_BUTTON_LEFT as u16;
@@ -219,6 +262,10 @@ bitflags! {
 }
 
 impl<'a> Wiimote<'a> {
+    pub fn event(&self) -> Option<WiimoteEvent> {
+        WiimoteEvent::from_raw(unsafe { (*self.ptr).event })
+    }
+
     pub fn is_pressed(&self, button: WiimoteButton) -> bool {
         unsafe { (*self.ptr).is_pressed(button.bits()) }
     }
@@ -229,6 +276,13 @@ impl<'a> Wiimote<'a> {
 
     pub fn is_released(&self, button: WiimoteButton) -> bool {
         unsafe { (*self.ptr).is_released(button.bits()) }
+    }
+
+    pub fn disconnect(&self) -> bool {
+        match self.event() {
+            Some(WiimoteEvent::Disconnect | WiimoteEvent::UnexpectedDisconnect) => true,
+            _ => false,
+        }
     }
 }
 
