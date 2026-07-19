@@ -1,6 +1,6 @@
-use std::default;
+use std::{default, ffi::CStr};
 
-use crate::error::Error;
+use crate::{error::Error, get_version};
 
 pub type WiimotePtrArr = *mut *mut wiiuse_sys::wiimote_t;
 pub type WiimotePtr = *mut wiiuse_sys::wiimote_t;
@@ -30,6 +30,19 @@ impl Wiiuse {
         Self {
             wm_arr_ptr,
             max_wiimotes,
+        }
+    }
+
+    pub fn version() -> String {
+        let c_str_ptr = unsafe { wiiuse_sys::wiiuse_version() };
+        if c_str_ptr.is_null() {
+            return "unknown".to_string();
+        }
+        let c_str = unsafe { CStr::from_ptr(c_str_ptr) };
+        let str = c_str.to_str().map(|s| s.to_owned());
+        match str {
+            Ok(s) => s,
+            Err(_) => "utf8-error".to_string(),
         }
     }
 
