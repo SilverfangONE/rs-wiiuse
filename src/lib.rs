@@ -1,15 +1,47 @@
 use bitflags::bitflags;
 use std::{ffi::CStr, marker::PhantomData};
+use thiserror::Error;
 use wiiuse_sys::WiimoteExt;
 
-pub type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
 pub type WiimotePtrArr = *mut *mut wiiuse_sys::wiimote_t;
 pub type WiimotePtr = *mut wiiuse_sys::wiimote_t;
 
 pub const DEFAULT_EXPANSION_TIMEOUT: u8 = 100;
 pub const DEFAULT_POLL_TIMEOUT: u8 = 100;
 
+#[derive(Error, Debug)]
+pub enum ConnectErrorReason {
+    #[error("Timeout nach {0} Sekunden")]
+    Timeout(u32),
+    #[error("Bluetooth-Stack blockiert")]
+    StackBlocked,
+    #[error("No wiimotes where connected")]
+    NoneConnected,
+}
+
+#[derive(Error, Debug)]
+pub enum WiiuseError {
+    #[error("wiiuse initialization failed")]
+    InitFailed,
+
+    #[error("no bluetooth dongle was found on this system")]
+    NoBluetoothDongle,
+
+    #[error("Verbindung fehlgeschlagen: {0}")]
+    Connect(ConnectErrorReason),
+
+    #[error("wiimote with id {0} was not found")]
+    WiimoteNotFound(usize),
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct WiimoteId(pub usize);
+
+impl WiimoteId {
+    pub fn new(id: usize) -> Self {
+        Self(id)
+    }
+}
 
 impl std::ops::Deref for WiimoteId {
     type Target = usize;
@@ -71,49 +103,42 @@ impl Wiiuse {
         let found = unsafe {
             wiiuse_sys::wiiuse_find(self.wm_arr_ptr, self.max_wiimotes, timeout_sec as i32)
         };
-        if found < 0 {
-            0
+        if found < 0 { 0 } else { found as u32 }
+    }
+
+    pub fn connect(&self) -> Result<u32, WiiuseError> {
+        let connected_count =
+            unsafe { wiiuse_sys::wiiuse_connect(self.wm_arr_ptr, self.max_wiimotes) };
+        if connected_count > 0 {
+            Ok(connected_count as u32)
         } else {
-            found as u32
+            Err(WiiuseError::Connect(ConnectErrorReason::NoneConnected))
         }
     }
 
-    pub fn connect(&self) -> u32 {
-        let connected = unsafe { wiiuse_sys::wiiuse_connect(self.wm_arr_ptr, self.max_wiimotes) };
-        if connected < 0 {
-            0
-        } else {
-            connected as u32
+    pub fn connect_all(&self, timeout_sec: u32) -> Result<u32, WiiuseError> {
+        if self.find(timeout_sec) == 0 {
+            return Err(WiiuseError::Connect(ConnectErrorReason::Timeout(
+                timeout_sec,
+            )));
         }
+        self.connect()
     }
 
-    pub fn disconnect_by_id(&self, id: WiimoteId) -> Result<(), String> {
+    pub fn disconnect_by_id(&self, id: WiimoteId) -> Result<(), WiiuseError> {
         if let Some(wiimote) = self.get_wiimote_by_id(id) {
             unsafe {
                 wiiuse_sys::wiiuse_disconnect(wiimote.ptr);
             }
             Ok(())
         } else {
-            Err("wiimot with id {} not found".to_string())
+            Err(WiiuseError::WiimoteNotFound(*id))
         }
     }
 
-    pub fn disconnect_raw(&self, wm_ptr: WiimotePtr) {
-        unsafe {
-            wiiuse_sys::wiiuse_disconnect(wm_ptr);
-        }
-    }
-
-    pub fn connect_all(&self, timeout_sec: u32) -> Result<u32, String> {
-        let found = self.find(timeout_sec);
-        if found <= 0 {
-            return Err("no controller found".into());
-        }
-        let count = self.connect();
-        if count > 0 {
-            Ok(count)
-        } else {
-            Err(format!("connection error (found {})", found))
+    pub fn disconnect_all(&self) {
+        for id in 0..(self.max_wiimotes as usize) {
+            let _ = self.disconnect_by_id(WiimoteId(id));
         }
     }
 
@@ -126,7 +151,7 @@ impl Wiiuse {
     /// ## Arguments
     ///
     /// * `normal_timeout_ms` - used for normal polling.
-    /// * `exp_timeout_ms` - used when an expansion is detected until the expansion succesfully handshakes.
+    /// * `exp_timeout_ms` - used when an expansion is detected until the expansion succesfulle handshakes.
     ///
     pub fn set_timeout(&self, normal_timeout_ms: u8, exp_timeout_ms: u8) {
         unsafe {
@@ -286,11 +311,11 @@ impl<'a> Wiimote<'a> {
         unsafe { (*self.ptr).is_released(button.bits()) }
     }
 
-    pub fn disconnect(&self) -> bool {
-        match self.event() {
-            Some(WiimoteEvent::Disconnect | WiimoteEvent::UnexpectedDisconnect) => true,
-            _ => false,
-        }
+    pub fn is_disconnected(&self) -> bool {
+        matches!(
+            self.event(),
+            Some(WiimoteEvent::Disconnect | WiimoteEvent::UnexpectedDisconnect)
+        )
     }
 }
 
